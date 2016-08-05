@@ -28,6 +28,7 @@ func (gen CodeGenerator) GenerateFake() (string, error) {
 	buf := new(bytes.Buffer)
 	err := format.Node(buf, token.NewFileSet(), gen.buildASTForFake())
 	if err != nil {
+		panic("lol")
 		return "", err
 	}
 

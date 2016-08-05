@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"go/format"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/maxbrunsfeld/counterfeiter/arguments"
 	"github.com/maxbrunsfeld/counterfeiter/generator"
@@ -38,25 +40,58 @@ func main() {
 	outputPath := parsedArgs.OutputPath
 	destinationPackage := parsedArgs.DestinationPackageName
 
-	iface, err := locator.GetInterfaceFromFilePath(interfaceName, sourceDir)
-	if err != nil {
-		fail("%v", err)
+	var code string
+	if parsedArgs.GeneratingInterface {
+		functions, err := locator.GetFunctionsFromDirectory(path.Base(sourceDir), sourceDir)
+		if err != nil {
+			fail("%v", err)
+		}
+
+		fakeName = strings.ToUpper(path.Base(sourceDir))[:1] + path.Base(sourceDir)[1:]
+
+		code, err = generator.InterfaceGenerator{
+			Model:                  functions,
+			Package:                sourceDir,
+			DestinationInterface:   fakeName,
+			DestinationPackageName: destinationPackage,
+		}.GenerateInterface()
+
+		if err != nil {
+			fail("%v", err)
+		}
+
+		outputPath = path.Join(outputPath, path.Base(sourceDir)+".go")
+
+	} else {
+		iface, err := locator.GetInterfaceFromFilePath(interfaceName, sourceDir)
+		if err != nil {
+			fail("%v", err)
+		}
+
+		code, err = generator.CodeGenerator{
+			Model:       *iface,
+			StructName:  fakeName,
+			PackageName: destinationPackage,
+		}.GenerateFake()
+
+		if err != nil {
+			fail("%v", err)
+		}
 	}
 
-	code, err := generator.CodeGenerator{
-		Model:       *iface,
-		StructName:  fakeName,
-		PackageName: destinationPackage,
-	}.GenerateFake()
+	printCode(code, outputPath, parsedArgs.PrintToStdOut)
+	reportDone(outputPath, fakeName)
+}
 
-	if err != nil {
-		fail("%v", err)
-	}
-
+func printCode(code, outputPath string, printToStdOut bool) {
 	newCode, err := format.Source([]byte(code))
+	if err != nil {
+		fail("%v", err)
+	}
+
 	code = string(newCode)
 
-	if parsedArgs.PrintToStdOut {
+	if printToStdOut {
 		fmt.Println(code)
 	} else {
 		os.MkdirAll(filepath.Dir(outputPath), 0777)
@@ -69,14 +104,16 @@ func main() {
 		if err != nil {
 			fail("Couldn't write to fake file - %v", err)
 		}
-
-		rel, err := filepath.Rel(cwd(), outputPath)
-		if err != nil {
-			fail("%v", err)
-		}
-
-		fmt.Printf("Wrote `%s` to `%s`\n", fakeName, rel)
 	}
+}
+
+func reportDone(outputPath, fakeName string) {
+	rel, err := filepath.Rel(cwd(), outputPath)
+	if err != nil {
+		fail("%v", err)
+	}
+
+	fmt.Printf("Wrote `%s` to `%s`\n", fakeName, rel)
 }
 
 func cwd() string {
